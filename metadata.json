@@ -1,5 +1,5 @@
 {
-  "name": "AWS EC2 Deployment Dashboard",
-  "description": "A dashboard to verify EC2 deployment details, including instance metadata, IP, DNS, and system load.",
+  "name": "System Monitor Dashboard",
+  "description": "A real-time dashboard showing system resources, network information, and environment details.",
   "requestFramePermissions": []
 }

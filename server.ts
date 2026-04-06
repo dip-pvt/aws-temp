@@ -1,87 +1,79 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import path from "path";
-import os from "os";
-import axios from "axios";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
-async function getAWSMetadata() {
-  const IMDS_URL = "http://169.254.169.254/latest/api/token";
-  const METADATA_URL = "http://169.254.169.254/latest/meta-data/";
-
-  try {
-    // Try to get IMDSv2 token
-    const tokenResponse = await axios.put(IMDS_URL, null, {
-      headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" },
-      timeout: 1000,
-    });
-    const token = tokenResponse.data;
-
-    const fetch = async (path: string) => {
-      const res = await axios.get(`${METADATA_URL}${path}`, {
-        headers: { "X-aws-ec2-metadata-token": token },
-        timeout: 1000,
-      });
-      return res.data;
-    };
-
-    return {
-      instanceId: await fetch("instance-id"),
-      availabilityZone: await fetch("placement/availability-zone"),
-      publicIp: await fetch("public-ipv4").catch(() => "N/A"),
-      privateIp: await fetch("local-ipv4"),
-      publicDns: await fetch("public-hostname").catch(() => "N/A"),
-      region: (await fetch("placement/availability-zone")).slice(0, -1),
-    };
-  } catch (error) {
-    return null; // Not on AWS or IMDS disabled
-  }
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
-    next();
-  });
-
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  app.get("/api/metadata", async (req, res) => {
-    console.log("Fetching metadata...");
+  // API Routes
+  app.get("/api/system-info", async (req, res) => {
     try {
-      const aws = await getAWSMetadata();
-      const system = {
-        hostname: os.hostname(),
-        platform: os.platform(),
-        uptime: os.uptime(),
-        load: os.loadavg(),
-        memory: {
-          total: os.totalmem(),
-          free: os.freemem(),
-        },
-        network: os.networkInterfaces(),
-      };
+      const cpus = os.cpus();
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const usedMem = totalMem - freeMem;
+      
+      const networkInterfaces = os.networkInterfaces();
+      const interfaces = Object.keys(networkInterfaces).map(name => ({
+        name,
+        details: networkInterfaces[name]
+      }));
+
+      // Get Disk Info (Node 18.15.0+)
+      let diskInfo = null;
+      try {
+        const stats = await fs.statfs("/");
+        diskInfo = {
+          total: stats.bsize * stats.blocks,
+          free: stats.bsize * stats.bfree,
+          available: stats.bsize * stats.bavail,
+          used: stats.bsize * (stats.blocks - stats.bfree),
+        };
+      } catch (e) {
+        console.error("Disk info error:", e);
+      }
 
       res.json({
-        aws,
-        system,
-        timestamp: new Date().toISOString(),
+        platform: os.platform(),
+        release: os.release(),
+        arch: os.arch(),
+        uptime: os.uptime(),
+        hostname: os.hostname(),
+        cpu: {
+          model: cpus[0].model,
+          cores: cpus.length,
+          speed: cpus[0].speed,
+          loadAvg: os.loadavg() // [1, 5, 15 min]
+        },
+        memory: {
+          total: totalMem,
+          free: freeMem,
+          used: usedMem,
+          usagePercent: ((usedMem / totalMem) * 100).toFixed(2)
+        },
+        disk: diskInfo,
+        network: interfaces,
+        process: {
+          uptime: process.uptime(),
+          memory: process.memoryUsage(),
+          pid: process.pid,
+          version: process.version
+        },
+        userInfo: os.userInfo()
       });
     } catch (error) {
-      console.error("Error in /api/metadata:", error);
-      res.status(500).json({ error: "Internal Server Error" });
+      res.status(500).json({ error: "Failed to gather system info" });
     }
   });
 
-  // Prevent API requests from falling through to SPA fallback
-  app.all("/api/*", (req, res) => {
-    res.status(404).json({ error: "API route not found" });
-  });
-
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -89,10 +81,10 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
