@@ -1,5 +1,5 @@
 {
-  "name": "CloudQuest AWS",
-  "description": "An interactive learning platform for AWS with service exploration and knowledge checks.",
+  "name": "AWS EC2 Deployment Dashboard",
+  "description": "A dashboard to verify EC2 deployment details, including instance metadata, IP, DNS, and system load.",
   "requestFramePermissions": []
 }
