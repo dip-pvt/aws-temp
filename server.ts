@@ -41,25 +41,45 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.get("/api/metadata", async (req, res) => {
-    const aws = await getAWSMetadata();
-    const system = {
-      hostname: os.hostname(),
-      platform: os.platform(),
-      uptime: os.uptime(),
-      load: os.loadavg(),
-      memory: {
-        total: os.totalmem(),
-        free: os.freemem(),
-      },
-      network: os.networkInterfaces(),
-    };
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
 
-    res.json({
-      aws,
-      system,
-      timestamp: new Date().toISOString(),
-    });
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/metadata", async (req, res) => {
+    console.log("Fetching metadata...");
+    try {
+      const aws = await getAWSMetadata();
+      const system = {
+        hostname: os.hostname(),
+        platform: os.platform(),
+        uptime: os.uptime(),
+        load: os.loadavg(),
+        memory: {
+          total: os.totalmem(),
+          free: os.freemem(),
+        },
+        network: os.networkInterfaces(),
+      };
+
+      res.json({
+        aws,
+        system,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error in /api/metadata:", error);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // Prevent API requests from falling through to SPA fallback
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: "API route not found" });
   });
 
   if (process.env.NODE_ENV !== "production") {

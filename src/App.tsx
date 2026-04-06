@@ -59,7 +59,17 @@ export default function App() {
     if (!isAuto) setIsRefreshing(true);
     try {
       const response = await fetch("/api/metadata");
-      if (!response.ok) throw new Error("Failed to fetch metadata");
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Server error: ${response.status} ${response.statusText}. ${text.slice(0, 50)}...`);
+      }
+      
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(`Expected JSON but got ${contentType}. Response: ${text.slice(0, 50)}...`);
+      }
+
       const result: Metadata = await response.json();
       setData(result);
       
